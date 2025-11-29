@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📢 Advertisement Posts</title>
+<style>
+/* Base styling */
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+    margin: 0;
+}
+.container {
+    max-width: 900px;
+    margin: auto;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    overflow: hidden;
+}
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    text-align: center;
+}
+form {
+    padding: 25px;
+}
+input, select, textarea {
+    width: 100%;
+    margin-bottom: 15px;
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 1rem;
+}
+button {
+    padding: 10px 15px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.files-section {
+    background: #f8f9fa;
+    padding: 20px;
+}
+.post {
+    background: white;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 10px;
+    border-left: 4px solid #667eea;
+}
+.post img, .post video {
+    max-width: 100%;
+    height: auto;
+    margin-top: 10px;
+    border-radius: 10px;
+}
+.badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 8px;
+}
+.badge.urgent { background: #e63946; }
+.badge.ordinary { background: #2a9d8f; }
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    body { padding: 10px; }
+    .container { border-radius: 10px; }
+    form { padding: 20px; }
+    input, select, textarea, button { font-size: 0.9rem; }
+}
+@media (max-width: 480px) {
+    .header h2 { font-size: 1.2rem; }
+    input, select, textarea { padding: 10px; font-size: 0.85rem; }
+    button { padding: 12px; font-size: 0.9rem; }
+    .post { padding: 12px; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+    body { padding: 5px; }
+    form { padding: 15px; }
+    .header { padding: 15px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h2>📢 Create Advertisement Post</h2>
+    </div>
+
+    <!-- Post creation form -->
+    <form method="POST" enctype="multipart/form-data">
+        <label>Priority:</label>
+        <select name="priority" required>
+            <option value="ordinary">Ordinary</option>
+            <option value="urgent">Urgent</option>
+        </select>
+
+        <label>Text Content:</label>
+        <textarea name="text_content" rows="3" placeholder="Write your ad..." required></textarea>
+
+        <label>Media Type:</label>
+        <select id="media_type" name="media_type" onchange="toggleMedia()" required>
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+        </select>
+
+        <div id="image_input">
+            <label>Upload Image:</label>
+            <input type="file" id="image_file" name="image" accept="image/*">
+        </div>
+
+        <div id="video_input" style="display:none;">
+            <label>Upload Video:</label>
+            <input type="file" id="video_file" name="video" accept="video/*">
+        </div>
+
+        <button type="submit">🚀 Post Advertisement</button>
+    </form>
+
+    <!-- Posts list -->
+    <div class="files-section">
+        <h3>📋 Current Posts:</h3>
+        {% for post in posts %}
+        <div class="post">
+            {% if post.text %}
+                {% if '[URGENT]' in post.text %}
+                    <span class="badge urgent">URGENT</span>
+                {% else %}
+                    <span class="badge ordinary">Ordinary</span>
+                {% endif %}
+                <p>{{ post.text }}</p>
+            {% endif %}
+            {% for img in post.images %}
+                <img src="{{ url_for('static', filename=img) }}">
+            {% endfor %}
+            {% for vid in post.videos %}
+                <video controls>
+                    <source src="{{ url_for('static', filename=vid) }}">
+                </video>
+            {% endfor %}
+
+            <!-- Delete button -->
+            <form action="{{ url_for('delete_post', post_name=post.name) }}" method="post" style="margin-top:10px;">
+                <button type="submit">🗑 Delete</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+function toggleMedia(){
+    const type = document.getElementById('media_type').value;
+    const imageInput = document.getElementById('image_input');
+    const videoInput = document.getElementById('video_input');
+    const imageFile = document.getElementById('image_file');
+    const videoFile = document.getElementById('video_file');
+
+    if(type === 'image'){
+        imageInput.style.display = 'block';
+        videoInput.style.display = 'none';
+        imageFile.required = true;
+        videoFile.required = false;
+    } else {
+        imageInput.style.display = 'none';
+        videoInput.style.display = 'block';
+        imageFile.required = false;
+        videoFile.required = true;
+    }
+}
+</script>
+</body>
+</html>

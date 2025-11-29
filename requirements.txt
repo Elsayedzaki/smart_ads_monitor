@@ -1,0 +1,6 @@
+mediapipe 
+opencv-python
+Flask
+pygame
+pyvidplayer2
+pyngrok 
