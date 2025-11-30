@@ -1,6 +1,5 @@
-mediapipe 
+mediapipe-rpi
 opencv-python
 Flask
 pygame
 pyvidplayer2
-pyngrok 
