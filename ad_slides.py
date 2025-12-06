@@ -2,16 +2,47 @@ import pygame
 from pyvidplayer2 import Video
 import json
 from datetime import datetime, timedelta
-import threading
 from PIL import Image
 from gesture import GestureControl
 import os
+from arabic_reshaper import reshape
+from bidi.algorithm import get_display
+import time
+
 pygame.init()
 pygame.font.init()
 pygame.mixer.init()
 
 # Configuration: Path to the general voice file for urgent ads
 URGENT_VOICE_FILE = "luvvoice.com-20251129-MWN5ah.mp3"  # Change this to your voice file path
+ARABIC_FONT_FILE = "Almarai-Regular.ttf"  # Path to Arabic font file
+
+
+def load_arabic_font(size=36):
+    """Load Arabic-compatible font with fallback options"""
+    # Try to load Almarai font for Arabic support
+    if os.path.exists(ARABIC_FONT_FILE):
+        try:
+            return pygame.font.Font(ARABIC_FONT_FILE, size)
+        except Exception as e:
+            print(f"Error loading Arabic font: {e}")
+    
+    # Fallback to system fonts
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+    ]
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                return pygame.font.Font(font_path, size)
+            except:
+                continue
+    
+    # Final fallback
+    return pygame.font.Font(None, size)
 
 
 def load_posts(json_file="posts_history.json"):
@@ -28,10 +59,18 @@ def load_posts(json_file="posts_history.json"):
 
     for idx, post in enumerate(posts):
         status = post.get("status", "ordinary")
-        media = post.get("media_path", "").strip()
+        # Fix: Handle None values from media_path
+        media = post.get("media_path") or ""
+        media = media.strip() if media else ""
+        
         timestamp = post.get("timestamp")
+        text = post.get("text", "").strip()
 
-        if not media or not timestamp:
+        # Skip posts with no media AND no text
+        if not media and not text:
+            continue
+            
+        if not timestamp:
             continue
 
         try:
@@ -45,30 +84,44 @@ def load_posts(json_file="posts_history.json"):
         expired = time_diff > timedelta(hours=expiry_hours)
 
         if expired:
-            media_path = media if os.path.isabs(media) else os.path.join(os.getcwd(), "static", media)
-            if os.path.exists(media_path):
-                try:
-                    os.remove(media_path)
-                except Exception as e:
-                    pass
+            # Delete media file if it exists
+            if media:
+                media_path = media if os.path.isabs(media) else os.path.join(os.getcwd(), "static", media)
+                if os.path.exists(media_path):
+                    try:
+                        os.remove(media_path)
+                        print(f"Deleted expired media: {media_path}")
+                    except Exception as e:
+                        print(f"Error deleting media: {e}")
+            # Don't add expired posts to remaining_posts - this removes them from JSON
+            print(f"Removed expired post: {timestamp}")
             continue
 
-        # Normalize media path
-        if not os.path.isabs(media):
-            media = os.path.join(os.getcwd(), "static", media)
+        # Handle text-only posts
+        is_text_only = not media
+        
+        if not is_text_only:
+            # Normalize media path
+            if not os.path.isabs(media):
+                media = os.path.join(os.getcwd(), "static", media)
 
-        if not os.path.exists(media):
-            continue
+            if not os.path.exists(media):
+                # Media file missing, treat as text-only
+                is_text_only = True
+                media = ""
 
         # Detect media type
-        ext = os.path.splitext(media)[1].lower()
-        is_video = ext in [".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"]
+        is_video = False
+        if media:
+            ext = os.path.splitext(media)[1].lower()
+            is_video = ext in [".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"]
 
         valid_posts.append({
             "media": media,
-            "caption": post.get("text", ""),
+            "caption": text,
             "urgent": (status == "urgent"),
             "is_video": is_video,
+            "is_text_only": is_text_only,
             "timestamp": timestamp
         })
         remaining_posts.append(post)
@@ -77,8 +130,9 @@ def load_posts(json_file="posts_history.json"):
     try:
         with open(json_file, "w") as f:
             json.dump(remaining_posts, f, indent=4)
+        print(f"Saved {len(remaining_posts)} posts to JSON")
     except Exception as e:
-        pass
+        print(f"Error saving posts: {e}")
     
     return valid_posts
 
@@ -99,22 +153,90 @@ def draw_rounded_rect(surface, color, rect, radius):
 
 
 def wrap_text(text, font, max_width):
-    """Wrap text to fit within max_width"""
-    words = text.split(' ')
-    lines = []
-    current_line = []
+    """Wrap text to fit within max_width, handling newlines and Arabic text"""
+    # Remove any carriage returns and clean up the text
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
     
-    for word in words:
-        test_line = ' '.join(current_line + [word])
-        if font.size(test_line)[0] <= max_width:
-            current_line.append(word)
+    # Split by newlines first
+    paragraphs = text.split('\n')
+    lines = []
+    
+    for paragraph in paragraphs:
+        # Strip only the paragraph, not individual characters
+        paragraph = paragraph.strip()
+        
+        if not paragraph:
+            # Empty line - add it as a space to maintain spacing
+            lines.append(' ')
+            continue
+        
+        # Check if text contains Arabic characters
+        has_arabic = any('\u0600' <= char <= '\u06FF' for char in paragraph)
+        
+        if has_arabic:
+            # For Arabic text, reshape first then apply bidi
+            try:
+                reshaped_text = reshape(paragraph)
+                bidi_text = get_display(reshaped_text)
+            except Exception as e:
+                print(f"Error processing Arabic text: {e}")
+                bidi_text = paragraph
+            
+            # Check if the whole text fits in one line
+            if font.size(bidi_text)[0] <= max_width:
+                lines.append(bidi_text)
+            else:
+                # Need to wrap - split by words and process
+                # For Arabic, split after reshaping and bidi
+                words = paragraph.split(' ')
+                current_words = []
+                
+                for word in words:
+                    if not word.strip():
+                        continue
+                    
+                    # Test with current words + new word
+                    test_paragraph = ' '.join(current_words + [word])
+                    test_reshaped = reshape(test_paragraph)
+                    test_bidi = get_display(test_reshaped)
+                    
+                    if font.size(test_bidi)[0] <= max_width:
+                        current_words.append(word)
+                    else:
+                        # Current line is full, add it
+                        if current_words:
+                            line_text = ' '.join(current_words)
+                            line_reshaped = reshape(line_text)
+                            line_bidi = get_display(line_reshaped)
+                            lines.append(line_bidi)
+                        current_words = [word]
+                
+                # Add remaining words
+                if current_words:
+                    line_text = ' '.join(current_words)
+                    line_reshaped = reshape(line_text)
+                    line_bidi = get_display(line_reshaped)
+                    lines.append(line_bidi)
         else:
+            # English text - normal LTR handling
+            words = paragraph.split(' ')
+            current_line = []
+            
+            for word in words:
+                # Skip empty words
+                if not word:
+                    continue
+                    
+                test_line = ' '.join(current_line + [word])
+                if font.size(test_line)[0] <= max_width:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                    current_line = [word]
+            
             if current_line:
                 lines.append(' '.join(current_line))
-            current_line = [word]
-    
-    if current_line:
-        lines.append(' '.join(current_line))
     
     return lines
 
@@ -220,7 +342,7 @@ class MediaSlide:
     """Single slide containing media (image/video) and caption"""
     
     def __init__(self, screen, source, caption, is_video=False, slide_index=None, 
-                 is_urgent=False, timestamp=None):
+                 is_urgent=False, timestamp=None, is_text_only=False):
         self.screen = screen
         self.source = source
         self.caption = caption
@@ -229,17 +351,19 @@ class MediaSlide:
         self.surface = None
         self.is_urgent = is_urgent
         self.timestamp = timestamp
+        self.is_text_only = is_text_only
         
         # Video player setup
         self.video = None
         self.playing = False
         self.video_finished = False
         
-        # Load media
-        if is_video:
-            self.load_video()
-        else:
-            self.load_image()
+        # Load media (skip if text-only)
+        if not is_text_only:
+            if is_video:
+                self.load_video()
+            else:
+                self.load_image()
     
     def load_image(self):
         """Load image and scale to fit screen while keeping aspect ratio (no cropping)."""
@@ -352,11 +476,31 @@ class MediaSlide:
         # Clear screen
         self.screen.fill((0, 0, 0))
         
-        if self.is_video and self.video:
-            # Draw video frame centered and fitted to screen
-            screen_width, screen_height = self.screen.get_size()
+        # Handle text-only posts
+        if self.is_text_only:
+            # Draw text centered on blank screen
+            content_font = load_arabic_font(48)
+            text_color = (255, 255, 255)
+            max_width = screen_width - 100
             
-            # Get video size
+            # Process text with Arabic support
+            lines = wrap_text(self.caption, content_font, max_width)
+            
+            # Calculate total height of all lines
+            line_height = 60
+            total_height = len(lines) * line_height
+            
+            # Start from center and work outward
+            y_offset = (screen_height - total_height) // 2
+            
+            for line in lines:
+                text_surface = content_font.render(line, True, text_color)
+                text_rect = text_surface.get_rect(center=(screen_width // 2, y_offset))
+                self.screen.blit(text_surface, text_rect)
+                y_offset += line_height
+            
+        elif self.is_video and self.video:
+            # Draw video frame centered and fitted to screen
             video_width, video_height = self.video.current_size
             
             # Center the video on screen
@@ -366,17 +510,35 @@ class MediaSlide:
             if self.video.draw(self.screen, (video_x, video_y), force_draw=False):
                 # Video frame was updated
                 pass
+                
+            # Draw caption box at the bottom for videos
+            if self.caption:
+                self._draw_caption_box()
+                    
         elif self.surface:
             # Draw image centered
             img_rect = self.surface.get_rect()
             img_rect.center = (screen_width // 2, screen_height // 2)
             self.screen.blit(self.surface, img_rect)
 
-        # Draw caption box at the bottom (for both image and video)
+            # Draw caption box at the bottom for images
+            if self.caption:
+                self._draw_caption_box()
+        
+        # Add urgent indicator if urgent (for all slide types)
+        if self.is_urgent:
+            urgent_font = pygame.font.SysFont("Calibri", 28, bold=True)
+            urgent_text = urgent_font.render("URGENT", True, (255, 50, 50))
+            screen_width, _ = self.screen.get_size()
+            self.screen.blit(urgent_text, (screen_width - 150, 20))
+    
+    def _draw_caption_box(self):
+        """Draw caption box with Arabic/English support at the bottom of the screen"""
+        screen_width, screen_height = self.screen.get_size()
         caption_height = 150
         caption_y = screen_height - caption_height
 
-        # Gradient overlay (transparent black)
+        # Gradient overlay
         gradient_surface = pygame.Surface((screen_width, caption_height), pygame.SRCALPHA)
         steps = 20
         for i in range(steps):
@@ -388,8 +550,8 @@ class MediaSlide:
 
         self.screen.blit(gradient_surface, (0, screen_height - caption_height))
 
-        # Draw caption text
-        font = pygame.font.SysFont("Calibri", 36) 
+        # Draw caption text with Arabic support
+        font = load_arabic_font(36)
         text_color = (255, 255, 255)
         max_width = screen_width - 40
         lines = wrap_text(self.caption, font, max_width)
@@ -399,12 +561,6 @@ class MediaSlide:
             text_surface = font.render(line, True, text_color)
             self.screen.blit(text_surface, (20, y_offset))
             y_offset += 40
-        
-        # Add urgent indicator if urgent
-        if self.is_urgent:
-            urgent_font = pygame.font.SysFont("Calibri", 28, bold=True)
-            urgent_text = urgent_font.render("🔴 URGENT", True, (255, 50, 50))
-            self.screen.blit(urgent_text, (screen_width - 150, 20))
     
     def cleanup(self):
         """Release resources"""
@@ -414,10 +570,66 @@ class MediaSlide:
                 self.video.close()
             except:
                 pass
-
+    def draw_with_offset(self, offset_ratio=0):
+        """Draw slide with offset - smoother animation
+        
+        This should replace draw_with_offset in MediaSlide class
+        """
+        screen_width, screen_height = self.screen.get_size()
+        
+        # Amplify the offset for better visual feedback
+        # But cap it to prevent sliding too far off screen
+        pixel_offset = int(screen_width * offset_ratio * 1.0)  # 1.5x amplification
+        pixel_offset = max(-screen_width // 2, min(screen_width // 2, pixel_offset))
+        
+        # Clear screen
+        self.screen.fill((0, 0, 0))
+        
+        # Handle text-only posts
+        if self.is_text_only:
+            content_font = load_arabic_font(48)
+            text_color = (255, 255, 255)
+            max_width = screen_width - 100
+            lines = wrap_text(self.caption, content_font, max_width)
+            line_height = 60
+            total_height = len(lines) * line_height
+            y_offset = (screen_height - total_height) // 2
+            
+            for line in lines:
+                text_surface = content_font.render(line, True, text_color)
+                text_rect = text_surface.get_rect(
+                    center=(screen_width // 2 + pixel_offset, y_offset)
+                )
+                self.screen.blit(text_surface, text_rect)
+                y_offset += line_height
+        
+        # Handle video
+        elif self.is_video and self.video:
+            video_width, video_height = self.video.current_size
+            video_x = (screen_width - video_width) // 2 + pixel_offset
+            video_y = (screen_height - video_height) // 2
+            self.video.draw(self.screen, (video_x, video_y), force_draw=False)
+            
+            if self.caption:
+                self._draw_caption_box()
+        
+        # Handle image
+        elif self.surface:
+            img_rect = self.surface.get_rect()
+            img_rect.center = (screen_width // 2 + pixel_offset, screen_height // 2)
+            self.screen.blit(self.surface, img_rect)
+            
+            if self.caption:
+                self._draw_caption_box()
+        
+        # Draw urgent indicator
+        if self.is_urgent:
+            urgent_font = pygame.font.SysFont("Calibri", 28, bold=True)
+            urgent_text = urgent_font.render("URGENT", True, (255, 50, 50))
+            self.screen.blit(urgent_text, (screen_width - 150 + pixel_offset, 20))
 
 class NavigationBar:
-    """Navigation bar with pill indicators"""
+    """Navigation bar with pill indicators that properly contains all indicators"""
     
     def __init__(self, screen, num_slides):
         self.screen = screen
@@ -430,11 +642,33 @@ class NavigationBar:
         self.spacing = 5
         self.padding = 10
         
-        total_width = (self.indicator_width + self.spacing) * num_slides + 2 * self.padding
-        self.width = min(total_width, 400)
+        # Calculate required width for all indicators
+        indicators_width = (self.indicator_width + self.spacing) * num_slides - self.spacing
+        total_width = indicators_width + 2 * self.padding
+        
+        # Get screen dimensions
+        screen_width, screen_height = screen.get_size()
+        
+        # Limit max width to 80% of screen width
+        max_width = int(screen_width * 0.8)
+        
+        if total_width > max_width:
+            # Too many indicators - adjust sizing to fit
+            available_width = max_width - 2 * self.padding
+            # Calculate how many indicators can fit with normal spacing
+            self.indicator_width = min(40, (available_width + self.spacing) // num_slides - self.spacing)
+            # Ensure minimum width of 15px per indicator
+            self.indicator_width = max(15, self.indicator_width)
+            # Recalculate spacing to distribute evenly
+            if num_slides > 1:
+                self.spacing = max(3, (available_width - self.indicator_width * num_slides) // (num_slides - 1))
+            self.width = max_width
+        else:
+            self.width = total_width
+        
         self.height = 40
         
-        screen_width, screen_height = screen.get_size()
+        # Center horizontally, position at bottom
         self.x = (screen_width - self.width) // 2
         self.y = screen_height - 80
     
@@ -443,14 +677,20 @@ class NavigationBar:
         self.active_index = index
     
     def draw(self):
-        """Draw navigation bar with obround indicators"""
+        """Draw navigation bar with obround indicators that fit within the box"""
         # Draw background with rounded corners
         bg_rect = (self.x, self.y, self.width, self.height)
         draw_rounded_rect(self.screen, (50, 50, 50, 128), bg_rect, 20)
         
-        # Draw obround indicators (pill-shaped)
-        start_x = self.x + self.padding
+        # Calculate actual available width for indicators
+        available_width = self.width - 2 * self.padding
+        
+        # Draw obround indicators (pill-shaped) - centered and evenly distributed
         indicator_y = self.y + (self.height - self.indicator_height) // 2
+        
+        # Calculate starting position to center indicators
+        total_indicators_width = self.indicator_width * self.num_slides + self.spacing * (self.num_slides - 1)
+        start_x = self.x + self.padding + (available_width - total_indicators_width) // 2
         
         for i in range(self.num_slides):
             indicator_x = start_x + i * (self.indicator_width + self.spacing)
@@ -537,7 +777,7 @@ class ThelabApp:
         urgent = [p for p in posts if p.get("urgent")]
         
         self.slides_data = urgent if urgent else (posts if posts else [
-            {"media": "", "caption": "Your ads here", "is_video": False}
+            {"media": "", "caption": "Your ads here", "is_video": False, "is_text_only": True}
         ])
         
         # Create slides
@@ -552,7 +792,8 @@ class ThelabApp:
                 slide_data.get("is_video", False),
                 slide_index=i,
                 is_urgent=slide_data.get("urgent", False),
-                timestamp=slide_data.get("timestamp")
+                timestamp=slide_data.get("timestamp"),
+                is_text_only=slide_data.get("is_text_only", False)
             )
             self.slides.append(slide)
             
@@ -630,20 +871,72 @@ class ThelabApp:
         self.notifications.append(notif)
     
     def on_gesture(self, event):
-        """Handle gesture events"""
-        if "mode" in event:
-            if event["mode"] == "gesture_ready":
-                self.mode = "gesture"
-                self.show_notification("Gesture mode enabled")
-            elif event["mode"] == "auto":
-                self.mode = "auto"
+        """Handle gesture events - Meta Quest style
         
-        if self.mode == "gesture" and "swipe" in event:
-            if event["swipe"] == "right":
-                self.previous_slide()
-            elif event["swipe"] == "left":
-                self.next_slide()
-    
+        This should replace the on_gesture method in ThelabApp class
+        """
+        event_type = event.get("type")
+        
+        # Initialize state
+        if not hasattr(self, 'gesture_state'):
+            self.gesture_state = {
+                'dragging': False,
+                'drag_offset': 0,
+                'slide_changed': False
+            }
+        
+        # PINCH START - Grab the slide
+        if event_type == "pinch_start":
+            self.gesture_state['dragging'] = True
+            self.gesture_state['drag_offset'] = 0
+            self.gesture_state['slide_changed'] = False
+            self.mode = "gesture"
+            self.show_notification("Pinched")
+            return
+        
+        # PINCH DRAG - Slide follows hand
+        elif event_type == "pinch_drag":
+            if not self.gesture_state['dragging']:
+                return
+            
+            offset = event.get("offset", 0)
+            self.gesture_state['drag_offset'] = offset
+            
+            # Check if we should trigger slide change
+            # Threshold for slide change (0.3 = 30% of screen width)
+            threshold = 0.25
+            
+            # Change slide while dragging (Meta Quest style)
+            if not self.gesture_state['slide_changed']:
+                if offset > threshold:
+                    # Swiped RIGHT -> Previous slide
+                    self.previous_slide()
+                    self.gesture_state['slide_changed'] = True
+                    self.gesture_state['drag_offset'] = 0  # Reset visual offset
+                    self.show_notification("← Previous")
+                    
+                elif offset < -threshold:
+                    # Swiped LEFT -> Next slide
+                    self.next_slide()
+                    self.gesture_state['slide_changed'] = True
+                    self.gesture_state['drag_offset'] = 0  # Reset visual offset
+                    self.show_notification("Next →")
+            
+            return
+        
+        # PINCH RELEASE - Let go
+        elif event_type == "pinch_release":
+            if not self.gesture_state['dragging']:
+                return
+            
+            # Clean up
+            self.gesture_state['dragging'] = False
+            self.gesture_state['drag_offset'] = 0
+            self.gesture_state['slide_changed'] = False
+            self.mode = "auto"
+            self.show_notification("Released")
+            return
+        
     def refresh_posts(self):
         """Refresh posts and rebuild if changed"""
         posts = load_posts()
@@ -661,7 +954,7 @@ class ThelabApp:
         # Reload slides
         urgent = [p for p in posts if p.get("urgent")]
         self.slides_data = urgent if urgent else (posts if posts else [
-            {"media": "", "caption": "Your ads here", "is_video": False}
+            {"media": "", "caption": "Your ads here", "is_video": False, "is_text_only": True}
         ])
         
         self.slides = []
@@ -675,7 +968,8 @@ class ThelabApp:
                 slide_data.get("is_video", False),
                 slide_index=i,
                 is_urgent=slide_data.get("urgent", False),
-                timestamp=slide_data.get("timestamp")
+                timestamp=slide_data.get("timestamp"),
+                is_text_only=slide_data.get("is_text_only", False)
             )
             self.slides.append(slide)
             
@@ -725,7 +1019,7 @@ class ThelabApp:
             if current_slide.is_video_finished():
                 self.next_slide()
             
-            # Auto-scroll for images only
+            # Auto-scroll for images and text-only slides
             if self.mode == "auto" and not current_slide.is_video:
                 if current_time - self.last_auto_scroll > self.auto_scroll_interval:
                     self.next_slide()
@@ -737,7 +1031,16 @@ class ThelabApp:
             
             # Draw current slide
             if self.slides:
-                self.slides[self.current_index].draw()
+                if (hasattr(self, 'gesture_state') and 
+                    self.gesture_state.get('dragging', False) and 
+                    abs(self.gesture_state.get('drag_offset', 0)) > 0.01):
+                    # Draw with drag offset
+                    self.slides[self.current_index].draw_with_offset(
+                        self.gesture_state['drag_offset']
+                    )
+                else:
+                    # Normal draw
+                    self.slides[self.current_index].draw()
             
             # Draw navigation bar
             self.nav.draw()

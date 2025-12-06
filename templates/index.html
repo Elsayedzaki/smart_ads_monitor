@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>📢 Advertisement Posts</title>
+<title>Advertisement Posts</title>
 <style>
 /* Base styling */
 body {
@@ -100,7 +100,7 @@ button {
 <body>
 <div class="container">
     <div class="header">
-        <h2>📢 Create Advertisement Post</h2>
+        <h2>Create Advertisement Post</h2>
     </div>
 
     <!-- Post creation form -->
@@ -111,7 +111,7 @@ button {
             <option value="urgent">Urgent</option>
         </select>
 
-        <label>Text Content:</label>
+        <label>Text Content (Required):</label>
         <textarea name="text_content" rows="3" placeholder="Write your ad..." required></textarea>
 
         <label>Media Type:</label>
@@ -130,12 +130,12 @@ button {
             <input type="file" id="video_file" name="video" accept="video/*">
         </div>
 
-        <button type="submit">🚀 Post Advertisement</button>
+        <button type="submit">Post Advertisement</button>
     </form>
 
     <!-- Posts list -->
     <div class="files-section">
-        <h3>📋 Current Posts:</h3>
+        <h3>Current Posts:</h3>
         {% for post in posts %}
         <div class="post">
             {% if post.text %}

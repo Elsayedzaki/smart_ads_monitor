@@ -112,22 +112,51 @@ def index():
 
     return render_template('index.html', posts=posts)
 
-# ✅ New delete route
 @app.route('/delete/<post_name>', methods=['POST'])
 def delete_post(post_name):
+
+    # -------------------------
+    # 1. Delete post folder
+    # -------------------------
     post_folder = os.path.join(UPLOAD_FOLDER, post_name)
     if os.path.exists(post_folder):
-        shutil.rmtree(post_folder)  # remove folder and files
+        shutil.rmtree(post_folder)
+
+    # Extract timestamp from folder name "post_20250101123045"
+    timestamp = post_name.replace("post_", "")
+
+    # -------------------------
+    # 2. Delete from posts_history.json
+    # -------------------------
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, 'r+') as f:
+            data = json.load(f)
+
+            # Keep only entries that are NOT the deleted post
+            new_data = [p for p in data if p.get("timestamp") != timestamp]
+
+            f.seek(0)
+            f.truncate()  # clear file
+            json.dump(new_data, f, indent=4)
+
+    # -------------------------
+    # 3. ALSO clean from latest.json if needed
+    # -------------------------
+    if os.path.exists(LATEST_FILE):
+        with open(LATEST_FILE, 'r+') as f:
+            data = json.load(f)
+            new_data = [p for p in data if p.get("timestamp") != timestamp]
+
+            f.seek(0)
+            f.truncate()
+            json.dump(new_data, f, indent=4)
+
     return redirect(url_for('index'))
 
 
-if __name__ == '__main__':
-    # Add your ngrok token
-   
 
-    # Create public URL
+# if __name__ == '__main__':
 
 
-
-    # Run Flask
-    app.run(host='0.0.0.0', port=5000, debug=True)
+#     # Run Flask
+#     app.run(host='0.0.0.0', port=5000, debug=True)

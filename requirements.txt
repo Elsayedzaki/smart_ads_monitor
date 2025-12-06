@@ -3,3 +3,5 @@ opencv-python
 Flask
 pygame
 pyvidplayer2
+arabic-reshaper
+python-bidi

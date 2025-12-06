@@ -1,11 +1,9 @@
 import threading
 import subprocess
 import socket
+import time
 from webpage import *
 from ad_slides import ThelabApp
-
-public_url = ""
-
 
 def check_internet(timeout=3):
     try:
@@ -41,16 +39,16 @@ def run_flask():
 if __name__ == "__main__":
 
     # --------------------------------------
-    # Check internet first
+    # Wait for internet
     # --------------------------------------
-    if not check_internet():
+    while not check_internet():
         print("❌ No internet detected")
         print("📡 Opening WiFi setup...")
         ask_for_wifi()
+        print("⏳ Waiting for internet...")
+        time.sleep(5)  # wait a bit before checking again
 
-    else:
-        print("✅ Internet OK")
-
+    print("✅ Internet OK")
 
     # --------------------------------------
     # Run Flask in background
@@ -60,7 +58,7 @@ if __name__ == "__main__":
     print("🚀 Flask server started")
 
     # --------------------------------------
-    # Start Kivy App
+    # Start pygame App
     # --------------------------------------
     app = ThelabApp()
     app.run()
