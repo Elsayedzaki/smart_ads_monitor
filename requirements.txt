@@ -2,6 +2,7 @@ mediapipe
 opencv-python
 Flask
 pygame
-pyvidplayer2
+numpy
 arabic-reshaper
 python-bidi
+pygame-emojis

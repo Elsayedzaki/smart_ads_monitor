@@ -131,6 +131,42 @@ button {
         </div>
 
         <button type="submit">Post Advertisement</button>
+        <div id="progress-container" style="margin-top:15px; display:none;">
+            <progress id="progress-bar" value="0" max="100" style="width:100%;"></progress>
+            <span id="progress-text">0%</span>
+        </div>
+
+        <script>
+        document.querySelector('form').onsubmit = function(e) {
+            const form = this;
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+
+            progressContainer.style.display = 'block';
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/', true);
+
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    progressBar.value = percent;
+                    progressText.textContent = Math.round(percent) + '%';
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    window.location.reload();
+                }
+            };
+
+            const formData = new FormData(form);
+            xhr.send(formData);
+            return false;
+        };
+        </script>
     </form>
 
     <!-- Posts list -->
