@@ -23,7 +23,7 @@ for file in [LATEST_FILE, HISTORY_FILE]:
             json.dump([], f)
 
 # Allowed extensions
-ALLOWED_IMG = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_IMG = {'png', 'jpg', 'jpeg', 'gif','heic'}
 ALLOWED_VID = {'mp4', 'avi', 'mov', 'webm', 'mkv'}
 
 def allowed_file(filename, allowed):
@@ -66,14 +66,10 @@ def index():
 
         # === حفظ الصورة/الفيديو بـ Streaming (آمن للملفات الكبيرة) ===
         if image and allowed_file(image.filename, ALLOWED_IMG):
+            # الصور عادة صغيرة → استخدم save مباشرة
             filename = f"image_{image.filename}"
             filepath = os.path.join(post_folder, filename)
-            with open(filepath, 'wb') as f:
-                while True:
-                    chunk = image.stream.read(1024 * 1024)  # 1MB chunks
-                    if not chunk:
-                        break
-                    f.write(chunk)
+            image.save(filepath)  # أسرع وأكثر أماناً للصور
             media_path = f"uploads/post_{timestamp}/{filename}"
 
         elif video and allowed_file(video.filename, ALLOWED_VID):
