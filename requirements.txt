@@ -1,8 +1,11 @@
-mediapipe
+protobuf==3.20.*
+numpy
 opencv-python
 Flask
 pygame
-numpy
 arabic-reshaper
 python-bidi
-pygame-emojis
+matplotlib
+attrs
+absl-py
+flatbuffers
